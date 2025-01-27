@@ -42,6 +42,47 @@ def resize_and_random_crop(image, final_size=512):
     
     return cropped_image
 
+def resize_and_center_crop_single(img, final_size=512):
+    """
+    Resizes the shorter side of `img` to `final_size` px (maintaining aspect ratio),
+    then does a centered (final_size, final_size) crop.
+    """
+    # Convert to float32
+    img = tf.cast(img, tf.float32)
+    
+    # Current image shape
+    height, width = tf.shape(img)[0], tf.shape(img)[1]
+    
+    # Compute scale ratio based on the shorter side
+    shorter_side = tf.minimum(height, width)
+    scale_ratio = tf.cast(final_size, tf.float32) / tf.cast(shorter_side, tf.float32)
+    
+    # Calculate new dimensions
+    new_height = tf.cast(tf.round(tf.cast(height, tf.float32) * scale_ratio), tf.int32)
+    new_width  = tf.cast(tf.round(tf.cast(width,  tf.float32) * scale_ratio), tf.int32)
+    
+    # Resize
+    img = tf.image.resize(img, (new_height, new_width))
+    
+    # Now compute offsets to extract a centered final_size x final_size patch
+    offset_height = (new_height - final_size) // 2
+    offset_width  = (new_width - final_size) // 2
+    
+    # Crop to center
+    img = tf.image.crop_to_bounding_box(
+        img,
+        offset_height=offset_height,
+        offset_width=offset_width,
+        target_height=final_size,
+        target_width=final_size
+    )
+    
+    # Scale pixel values to [0,1]
+    img /= 255.0
+    
+    return img
+
+
 def resize_and_random_crop_single(img, final_size=512):
     """Handles a single image of shape [H, W, 3]."""
     img = tf.cast(img, tf.float32)
@@ -68,14 +109,15 @@ def preprocess_train(batch_images, batch_labels, final_size=512):
     )
     return batch_images, batch_labels
 
-# (Optionally, if you want a *center* crop for validation/test, define a different function.)
-# But here we’ll reuse the same random crop for simplicity.
 def preprocess_val(batch_images, batch_labels, final_size=512):
     batch_images = tf.map_fn(
-        lambda img: resize_and_random_crop_single(img, final_size),
+        lambda img: resize_and_center_crop_single(img, final_size),
         batch_images
     )
     return batch_images, batch_labels
+
+
+
 
 # ------------------------------------------------------------------------
 # 2) Set directories & load datasets
@@ -91,8 +133,7 @@ batch_size = 16
 # train_ds1
 train_ds1 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, "train"),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
     image_size=(512,512),  # Keep original size
     seed=512
@@ -101,10 +142,9 @@ train_ds1 = tf.keras.utils.image_dataset_from_directory(
 # train_ds2 - we will split this 80/20
 train_ds2 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, 'train_potato'),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
-    image_size=(512,512),
+    image_size=None,
     seed=512
 )
 
@@ -124,8 +164,7 @@ train_ds = train_ds1.concatenate(train_ds2)
 # val_ds: main validation from the Testing Images dir
 val_ds_main = tf.keras.utils.image_dataset_from_directory(
     os.path.join(validation_dir),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
     image_size=(512,512),
     seed=512
@@ -161,27 +200,24 @@ val_ds = (val_ds
 num_classes = 2  # [REAL, FAKE]
 
 model = models.Sequential([
-    Conv2D(32, (3,3), activation='relu', input_shape=(512, 512, 3)),
+    Conv2D(32, (5,5), activation='relu', input_shape=(512, 512, 3)),
     MaxPooling2D((2,2)),
 
-    Conv2D(64, (3,3), activation='relu'),
+    Conv2D(64, (5,5), activation='relu'),
     MaxPooling2D((2,2)),
 
-    Conv2D(128, (3,3), activation='relu'),
+    Conv2D(128, (5,5), activation='relu'),
     MaxPooling2D((2,2)),
-
-    #Conv2D(256, (3,3), activation='relu'),
-    #MaxPooling2D((2,2)),
 
     Flatten(),
     Dense(128, activation='relu'),
     Dropout(0.3),
-    Dense(num_classes, activation='softmax')
+    Dense(1, activation='sigmoid')
 ])
 
 model.compile(
     optimizer='adam',
-    loss='categorical_crossentropy',
+    loss='binary_crossentropy',
     metrics=['accuracy']
 )
 
@@ -191,7 +227,7 @@ model.summary()
 # 5) Train the model
 # ------------------------------------------------------------------------
 checkpoint_cb = ModelCheckpoint(
-    'best_model.h5',       # file path
+    'best_model_test1.h5',       # file path
     monitor='val_loss',    # metric to monitor
     save_best_only=True    # only save if val_loss improves
 )
@@ -214,10 +250,10 @@ y_pred = []
 
 for images, labels in val_ds:
     preds = model.predict(images)
-    # Convert one-hot labels to integer class
-    true_classes = np.argmax(labels.numpy(), axis=1)
-    # Convert predicted probabilities to integer class
-    pred_classes = np.argmax(preds, axis=1)
+    # Labels are integers (0 or 1), so no need for argmax
+    true_classes = labels.numpy().astype(int)
+    # Predicted probabilities need to be thresholded at 0.5 to classify as 0 or 1
+    pred_classes = (preds > 0.5).astype(int).flatten()
 
     y_true.append(true_classes)
     y_pred.append(pred_classes)
@@ -232,3 +268,6 @@ print(cm)
 target_names = ['REAL', 'FAKE']
 print("Classification Report:")
 print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
+
+# Save the model in the root folder
+model.save('best_model_test1_root.keras')

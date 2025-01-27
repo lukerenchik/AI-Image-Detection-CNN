@@ -1,12 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Conv2D, MaxPooling2D, Flatten, Input, BatchNormalization, Add
 from tensorflow.keras import regularizers, layers, models
 from IPython.display import Image
 import os
 from sklearn.metrics import classification_report, confusion_matrix
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.models import Model
 
 # ------------------------------------------------------------------------
 # 1) Define helper function: resize_and_random_crop
@@ -170,11 +171,11 @@ model = models.Sequential([
     Conv2D(128, (3,3), activation='relu'),
     MaxPooling2D((2,2)),
 
-    #Conv2D(256, (3,3), activation='relu'),
-    #MaxPooling2D((2,2)),
+    Conv2D(256, (3,3), activation='relu'),
+    MaxPooling2D((2,2)),
 
     Flatten(),
-    Dense(128, activation='relu'),
+    Dense(256, activation='relu'),
     Dropout(0.3),
     Dense(num_classes, activation='softmax')
 ])
@@ -232,3 +233,6 @@ print(cm)
 target_names = ['REAL', 'FAKE']
 print("Classification Report:")
 print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
+
+# Save the model in the root folder
+model.save('best_model_test2_root.h5')

@@ -1,12 +1,13 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Conv2D, MaxPooling2D, Flatten, Input, BatchNormalization, Add
 from tensorflow.keras import regularizers, layers, models
 from IPython.display import Image
 import os
 from sklearn.metrics import classification_report, confusion_matrix
 from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.models import Model
 
 # ------------------------------------------------------------------------
 # 1) Define helper function: resize_and_random_crop
@@ -159,26 +160,56 @@ val_ds = (val_ds
 # 4) Define a simple CNN
 # ------------------------------------------------------------------------
 num_classes = 2  # [REAL, FAKE]
+input_layer = Input(shape=(512, 512, 3))
 
-model = models.Sequential([
-    Conv2D(32, (3,3), activation='relu', input_shape=(512, 512, 3)),
-    MaxPooling2D((2,2)),
 
-    Conv2D(64, (3,3), activation='relu'),
-    MaxPooling2D((2,2)),
+# ---------- Block 1 ----------
+x = Conv2D(32, (3, 3), padding='same')(input_layer)
+x = BatchNormalization()(x)
+x = MaxPooling2D((2, 2))(x)
+# shape is [batch, 256, 256, 32]
 
-    Conv2D(128, (3,3), activation='relu'),
-    MaxPooling2D((2,2)),
+# ---------- Block 2 with skip ----------
+# transform skip_x to match 64 channels
+skip_x = Conv2D(64, (1, 1), padding='same')(x)
+skip_x = BatchNormalization()(skip_x)
 
-    #Conv2D(256, (3,3), activation='relu'),
-    #MaxPooling2D((2,2)),
+x2 = Conv2D(64, (3, 3), padding='same')(x)
+x2 = BatchNormalization()(x2)
+x2 = Conv2D(64, (3, 3), padding='same')(x2)
+x2 = BatchNormalization()(x2)
 
-    Flatten(),
-    Dense(128, activation='relu'),
-    Dropout(0.3),
-    Dense(num_classes, activation='softmax')
-])
+x2 = Add()([skip_x, x2])  # now both branches have shape [..., 64]
+x2 = MaxPooling2D((2, 2))(x2)
+# shape is [batch, 128, 128, 64]
 
+# ---------- Block 3 with skip ----------
+skip_x2 = Conv2D(128, (1, 1), padding='same')(x2)
+skip_x2 = BatchNormalization()(skip_x2)
+
+x3 = Conv2D(128, (3, 3), padding='same')(x2)
+x3 = BatchNormalization()(x3)
+x3 = Conv2D(128, (3, 3), padding='same')(x3)
+x3 = BatchNormalization()(x3)
+
+x3 = Add()([skip_x2, x3])  # shape [..., 128]
+x3 = MaxPooling2D((2, 2))(x3)
+# shape is [batch, 64, 64, 128]
+
+# ---------- Block 4 ----------
+# (No skip here or you can do another skip)
+x4 = Conv2D(256, (3, 3), padding='same')(x3)
+x4 = BatchNormalization()(x4)
+x4 = MaxPooling2D((2, 2))(x4)
+# shape is [batch, 32, 32, 256]
+
+# ---------- Dense Layers ----------
+x_flat = Flatten()(x4)
+x_fc = Dense(256, activation='relu')(x_flat)
+x_fc = Dropout(0.3)(x_fc)
+output_layer = Dense(num_classes, activation='softmax')(x_fc)
+
+model = Model(inputs=input_layer, outputs=output_layer)
 model.compile(
     optimizer='adam',
     loss='categorical_crossentropy',
@@ -232,3 +263,6 @@ print(cm)
 target_names = ['REAL', 'FAKE']
 print("Classification Report:")
 print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
+
+# Save the model in the root folder
+model.save('best_model_test2point5_root.h5')

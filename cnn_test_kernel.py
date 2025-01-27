@@ -91,8 +91,7 @@ batch_size = 16
 # train_ds1
 train_ds1 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, "train"),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
     image_size=(512,512),  # Keep original size
     seed=512
@@ -101,8 +100,7 @@ train_ds1 = tf.keras.utils.image_dataset_from_directory(
 # train_ds2 - we will split this 80/20
 train_ds2 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, 'train_potato'),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
     image_size=(512,512),
     seed=512
@@ -124,8 +122,7 @@ train_ds = train_ds1.concatenate(train_ds2)
 # val_ds: main validation from the Testing Images dir
 val_ds_main = tf.keras.utils.image_dataset_from_directory(
     os.path.join(validation_dir),
-    label_mode='categorical',
-    class_names=['REAL', 'FAKE'],
+    label_mode='int',
     batch_size=batch_size,
     image_size=(512,512),
     seed=512
@@ -150,10 +147,10 @@ train_ds = (train_ds
     .prefetch(tf.data.AUTOTUNE)
 )
 
-val_ds = (val_ds
-    .map(preprocess_val, num_parallel_calls=AUTOTUNE)
-    .prefetch(AUTOTUNE)
-)
+#val_ds = (val_ds
+#    .map(preprocess_val, num_parallel_calls=AUTOTUNE)
+#    .prefetch(AUTOTUNE)
+#)
 
 # ------------------------------------------------------------------------
 # 4) Define a simple CNN
@@ -161,27 +158,25 @@ val_ds = (val_ds
 num_classes = 2  # [REAL, FAKE]
 
 model = models.Sequential([
-    Conv2D(32, (3,3), activation='relu', input_shape=(512, 512, 3)),
+    Conv2D(32, (5,5), activation='relu', input_shape=(512, 512, 3)),
     MaxPooling2D((2,2)),
 
-    Conv2D(64, (3,3), activation='relu'),
+    Conv2D(64, (5,5), activation='relu'),
     MaxPooling2D((2,2)),
 
-    Conv2D(128, (3,3), activation='relu'),
+    Conv2D(128, (5,5), activation='relu'),
     MaxPooling2D((2,2)),
 
-    #Conv2D(256, (3,3), activation='relu'),
-    #MaxPooling2D((2,2)),
 
     Flatten(),
     Dense(128, activation='relu'),
     Dropout(0.3),
-    Dense(num_classes, activation='softmax')
+    Dense(1, activation='sigmoid')
 ])
 
 model.compile(
     optimizer='adam',
-    loss='categorical_crossentropy',
+    loss='binary_crossentropy',
     metrics=['accuracy']
 )
 
@@ -191,7 +186,7 @@ model.summary()
 # 5) Train the model
 # ------------------------------------------------------------------------
 checkpoint_cb = ModelCheckpoint(
-    'best_model.h5',       # file path
+    'best_model_test1.h5',       # file path
     monitor='val_loss',    # metric to monitor
     save_best_only=True    # only save if val_loss improves
 )
@@ -214,10 +209,10 @@ y_pred = []
 
 for images, labels in val_ds:
     preds = model.predict(images)
-    # Convert one-hot labels to integer class
-    true_classes = np.argmax(labels.numpy(), axis=1)
-    # Convert predicted probabilities to integer class
-    pred_classes = np.argmax(preds, axis=1)
+    # Labels are integers (0 or 1), so no need for argmax
+    true_classes = labels.numpy().astype(int)
+    # Predicted probabilities need to be thresholded at 0.5 to classify as 0 or 1
+    pred_classes = (preds > 0.5).astype(int).flatten()
 
     y_true.append(true_classes)
     y_pred.append(pred_classes)
@@ -232,3 +227,6 @@ print(cm)
 target_names = ['REAL', 'FAKE']
 print("Classification Report:")
 print(classification_report(y_true, y_pred, target_names=target_names, digits=4))
+
+# Save the model in the root folder
+model.save('best_model_test1_kernel.keras')
