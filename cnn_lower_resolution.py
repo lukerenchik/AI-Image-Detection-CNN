@@ -94,14 +94,14 @@ validation_dir = 'Testing Images'
 print("Loading dataset from:", dataset_dir)
 print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
 
-batch_size = 16
+batch_size = 8
 
 # Main train dataset
 train_ds1 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, "train"),
     label_mode='int',        # 0 or 1 labels
     batch_size=batch_size,
-    image_size=(512, 512),
+    image_size=(256, 256),
     seed=512
 )
 
@@ -110,7 +110,7 @@ train_ds2 = tf.keras.utils.image_dataset_from_directory(
     os.path.join(dataset_dir, 'train_potato'),
     label_mode='int',
     batch_size=batch_size,
-    image_size=(512, 512),
+    image_size=(256, 256),
     seed=512
 )
 
@@ -132,7 +132,7 @@ val_ds_main = tf.keras.utils.image_dataset_from_directory(
     validation_dir,
     label_mode='int',
     batch_size=batch_size,
-    image_size=(512, 512),
+    image_size=(256, 256),
     seed=512
 )
 val_ds = val_ds_main.concatenate(train_ds2_val)
@@ -140,37 +140,43 @@ val_ds = val_ds_main.concatenate(train_ds2_val)
 # ------------------------------------------------------------------------
 # 3) Preprocessing
 # ------------------------------------------------------------------------
-AUTOTUNE = tf.data.AUTOTUNE
 
-train_ds = (train_ds
-            .map(preprocess_train, num_parallel_calls=AUTOTUNE)
-            .prefetch(AUTOTUNE))
 
-val_ds = (val_ds
-          .map(preprocess_val, num_parallel_calls=AUTOTUNE)
-          .prefetch(AUTOTUNE))
+train_ds = train_ds.map(lambda x, y: (x/255.0, y))
+val_ds   = val_ds.map(lambda x, y: (x/255.0, y))
+
+
+#AUTOTUNE = tf.data.AUTOTUNE
+
+#train_ds = (train_ds
+#            .map(preprocess_train, num_parallel_calls=AUTOTUNE)
+#            .prefetch(AUTOTUNE))
+
+#val_ds = (val_ds
+#          .map(preprocess_val, num_parallel_calls=AUTOTUNE)
+#          .prefetch(AUTOTUNE))
 
 # ------------------------------------------------------------------------
 # 4) Simple CNN (Binary Classification)
 # ------------------------------------------------------------------------
 model = models.Sequential([
-    Conv2D(32, (3,3), activation='relu', input_shape=(512, 512, 3)),
+    Conv2D(16, (3,3), activation='relu', input_shape=(256, 256, 3)),
+    MaxPooling2D((2,2)),
+
+    Conv2D(32, (3,3), activation='relu'),
     MaxPooling2D((2,2)),
 
     Conv2D(64, (3,3), activation='relu'),
     MaxPooling2D((2,2)),
 
-    Conv2D(128, (3,3), activation='relu'),
-    MaxPooling2D((2,2)),
-
     Flatten(),
-    Dense(128, activation='relu'),
+    Dense(64, activation='relu'),
     Dropout(0.3),
     Dense(1, activation='sigmoid')  # single output for binary classification
 ])
 
 model.compile(
-    optimizer='adam',
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
     loss='binary_crossentropy',
     metrics=['accuracy']
 )
@@ -267,7 +273,7 @@ print(report)
 # ------------------------------------------------------------------------
 # (Optional) Save the model as a .keras file
 # ------------------------------------------------------------------------
-model.save('final_model.keras')  # saves in Keras (SavedModel) format
+model.save('final_model_256.keras')  # saves in Keras (SavedModel) format
 
 
 # ------------------------------------------------------------------------
@@ -335,7 +341,7 @@ plt.legend()
 plt.tight_layout()
 
 # Save the figure to a file (e.g., PNG, JPG, PDF, etc.)
-plt.savefig("training_validation_metrics.png", dpi=300)  # adjust dpi as needed
+plt.savefig("training_validation_metrics_lowerResolution.png", dpi=300)  # adjust dpi as needed
 
 # Optional: Display the figure
 plt.show()
