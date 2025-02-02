@@ -1,7 +1,7 @@
 import os
 from PIL import Image
 
-folder_path = 'Training Images/train_potato/REAL'
+folder_path = 'dataset'
 for root, dirs, files in os.walk(folder_path):
     for filename in files:
         filepath = os.path.join(root, filename)
